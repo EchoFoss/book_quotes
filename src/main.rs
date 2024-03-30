@@ -7,6 +7,7 @@ use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenv::from_path("./.env").ok();
     let port = env::var("PORT").unwrap_or_else(|_| "3000".to_owned());
     let addr = format!("0.0.0.0:{}", port);
 
@@ -22,7 +23,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/", get(handlers::check_health))
         .route("/quotes", post(handlers::create_quote))
-        .with_state(&pool);
+        .route("/quotes", get(handlers::read_quotes))
+        .with_state(pool);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();

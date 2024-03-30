@@ -1,11 +1,11 @@
-use axum::{async_trait, extract, http, Json};
-use axum::extract::{Request, State};
-use axum::handler::{Handler,};
+use axum::{http, Json};
+use axum::extract::{State};
 use axum::http::StatusCode;
-use serde::Deserialize;
-use sqlx::PgPool;
+use axum::response::IntoResponse;
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, PgPool};
 
-#[derive(Deserialize)]
+#[derive(Serialize,Deserialize, FromRow)]
 pub struct Quote {
     id: uuid::Uuid,
     book_name: String,
@@ -14,7 +14,7 @@ pub struct Quote {
     updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Serialize)]
 pub struct CreateQuote {
     book_name: String,
     quote: String,
@@ -32,8 +32,13 @@ impl Quote {
     }
 }
 
-pub async fn check_health() -> StatusCode {
-    StatusCode::OK
+pub async fn check_health() -> impl IntoResponse {
+    const MESSAGE: &str = "Crud usando axum e rust";
+    let json_response = serde_json::json!({
+        "status": "success",
+        "message": MESSAGE
+    });
+    Json(json_response)
 }
 
 pub async fn create_quote(
@@ -59,5 +64,21 @@ pub async fn create_quote(
     match res {
         Ok(_) => Ok((StatusCode::CREATED, Json(quote))),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+pub async fn read_quotes(
+    State(pool): State<PgPool>,
+) -> Result<axum::Json<Vec<Quote>>, http::StatusCode> {
+    let res = sqlx::query_as::<_, Quote>("SELECT * FROM quotes")
+        .fetch_all(&pool)
+        .await;
+
+    match res {
+        Ok(quotes) => Ok(Json(quotes)),
+        Err(error) => {
+            eprintln!("error fetching data from database {}", error);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
     }
 }
