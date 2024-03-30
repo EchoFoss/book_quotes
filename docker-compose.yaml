@@ -1,0 +1,19 @@
+version: '3.9'
+
+services:
+  db:
+    container_name: db_quotes
+    image: 'postgres:16-bookworm'
+    restart: always
+    volumes:
+      - type: tmpfs
+        target: /dev/db_storage
+        tmpfs:
+          size: 134217728
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: book_quotes
+
+    ports:
+      - "5432:5432"
