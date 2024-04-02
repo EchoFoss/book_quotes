@@ -1,4 +1,4 @@
-use axum::{http, Json};
+use axum::{extract, http, Json};
 use axum::extract::{State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -16,6 +16,11 @@ pub struct Quote {
 
 #[derive(Deserialize, Serialize)]
 pub struct CreateQuote {
+    book_name: String,
+    quote: String,
+}
+#[derive(Deserialize, Serialize)]
+pub struct UpdateQuote {
     book_name: String,
     quote: String,
 }
@@ -49,7 +54,7 @@ pub async fn create_quote(
 
     let res = sqlx::query(
         r#"
-        INSERT INTO quotes (id, book, quote, inserted_at, updated_at)
+        INSERT INTO quotes (id, book_name, quote, inserted_at, updated_at)
         VALUES ($1, $2, $3, $4, $5)
         "#,
     )
@@ -63,13 +68,16 @@ pub async fn create_quote(
 
     match res {
         Ok(_) => Ok((StatusCode::CREATED, Json(quote))),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(err) => {
+            println!("internal server error: {}", err);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        },
     }
 }
 
 pub async fn read_quotes(
     State(pool): State<PgPool>,
-) -> Result<axum::Json<Vec<Quote>>, http::StatusCode> {
+) -> Result<Json<Vec<Quote>>, StatusCode> {
     let res = sqlx::query_as::<_, Quote>("SELECT * FROM quotes")
         .fetch_all(&pool)
         .await;
@@ -82,3 +90,65 @@ pub async fn read_quotes(
         }
     }
 }
+
+pub async fn delete_quote_by_id(
+    State(pool): State<PgPool>,
+    extract::Path(id): extract::Path<uuid::Uuid>
+) -> StatusCode {
+
+    let res = sqlx::query(
+        r#"
+        delete from quotes
+        where id = $1
+        "#
+    )
+    .bind(id)
+    .execute(&pool)
+    .await
+    .map(|res| match res.rows_affected() {
+        0 => StatusCode::NOT_FOUND,
+        _ => StatusCode::OK
+    });
+
+    match res {
+        Ok(status) => status,
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR
+    }
+}
+
+pub async fn update_quotes(
+    State(pool): State<PgPool>,
+    extract::Path(id): extract::Path<uuid::Uuid>,
+    Json(payload): Json<UpdateQuote>
+) -> StatusCode {
+
+    let now = chrono::Utc::now();
+
+    let res = sqlx::query(
+        r#"
+        update quotes
+        set book_name = $1, quote = $2, updated_at = $3
+        where id = $4
+        "#
+    )
+        .bind(&payload.book_name)
+        .bind(&payload.quote)
+        .bind(now)
+        .bind(id)
+        .execute(&pool)
+        .await
+        .map(|res| match res.rows_affected() {
+            0 => StatusCode::NOT_FOUND,
+            _ => StatusCode::OK,
+        });
+
+    match res {
+        Ok(status) => status,
+        Err(err) => {
+            println!("error while updating quote with id {}, error: {}", id, err);
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
+
+}
+
